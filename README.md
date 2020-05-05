@@ -12,13 +12,13 @@ EasyFlash在Stm32上使用的很好，就仿照移植了个8位机版本的，�
 #### 软件架构
 1.  软件仅包含 efs.h efs.c efs_port.c 3个文件；
 2.  其中 efs_port.c 文件为用户移植时需要修改的文件，里面仅有3个函数需要实现，用户可以先在单片机内存中辟1块区域测试使用本库，便于快速掌握；
-```
+``` C
    (1) efs_port_read(size_t addr, uint8_t *buf, size_t size)  -->  读取数据接口
    (2) efs_port_erase(size_t addr, size_t size) -->  擦除数据接口
    (3) efs_port_write(size_t addr, const uint8_t *buf, size_t size) -->  写入数据接口
 ```
 3.  efs.h 头文件用户在使用前，需要根据自身实际情况进行修改；
-```
+``` C
 #define EFS_KEY_LENGHT_MAX  4          // key的最大长度，可为（4，12），这里推荐固定为4Bytes，则32Bytes的BLOCK中最多能存储3个MapTableItem条目，为12Bytes时，则需要对应调整BLOCK为64Bytes，
 
 #define EFS_POINTER_DEFAULT 0x0000     // 存储空间擦除之后的默认值，比如我这里，擦除后默认为0x0000
@@ -31,7 +31,7 @@ EasyFlash在Stm32上使用的很好，就仿照移植了个8位机版本的，�
                                        // 索引表，这里推荐为2个块的区域大小，即Block为32Bytes，Item为8Bytes，则推荐值为 2*32/8=8 
 ```
 #### 函数方法介绍
-```
+``` C
 uint8_t efs_init();  // 初始化函数，需在使用之前调用，它会检查空间格式是否满足要求，并决定是否调用efs_format();函数进行格式化
 uint8_t efs_format(); // 空间格式化函数，当出现空间不足的情况时，需要用户调用重新格式化（格式化前记得读取缓存重要数据^_^）
 size_t  efs_get_len( uint8_t *key ); // 根据key得到数据的长度，未找到或出错的时候，返回0
@@ -44,7 +44,7 @@ uint8_t efs_gc(); // 对存储空间进行回收，测试用，用户无需调�
 
 1.  移植的接口函数
     这里使用内存作为存储区域，测试对 efs 的使用
-```
+``` C
 uint8_t _ram_data[128*6]
 uint8_t efs_port_read(size_t addr, uint8_t *buf, size_t size) 
 {
@@ -69,7 +69,7 @@ uint8_t efs_port_write(size_t addr, const uint8_t *buf, size_t size)
 ```
 
 2.  测试用例
-```
+``` C
 uint8_t resp;
 size_t len;
 size_t _count = 0; //计数本轮写入字节数
