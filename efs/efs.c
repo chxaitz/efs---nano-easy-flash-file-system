@@ -470,7 +470,8 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen)
                     len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE;
                     len = len > bufLen ? bufLen: len;
                     memcpy( buf, pBlk->data, len );
-                    *dataLen += len;
+                    if( NULL != dataLen )
+                        *dataLen += len;
                     bufLen -= len;
                 }
             }
