@@ -1,6 +1,5 @@
 #include "efs.h"
 #include "string.h"
-#include "m_e2p.h"
 /*********************************************************************
  * CONSTANTS
  */
@@ -93,13 +92,10 @@ size_t efs_apply_empty_block( uint8_t n )
 {
     uint8_t finded = FALSE;
     uint8_t retry = FALSE;
-//    size_t addr;
     size_t index = 0;
     struct xMapTableHead *pHead = (struct xMapTableHead *)_efs_block[n];
     while(1){
         for(size_t i=EFS_BLOCKS_IN_SECTOR; i<EFS_BLOCK_INDEX_MAX; i++ ){
-//            addr = EFS_START_ADDR + EFS_BLOCK_SIZE * i;
-//            efs_port_read( addr _efs_block[n], EFS_POINTER_SIZE);
             efs_read( i, n, 0, EFS_POINTER_SIZE);
             if( pHead->index[0] == EFS_POINTER_DEFAULT ){
                 memset(_efs_block[n], EFS_POINTER_DEFAULT, EFS_BLOCK_SIZE );
@@ -185,11 +181,9 @@ uint8_t efs_clear_index_chain( size_t index, uint8_t n )
           indexTmp = index;
           index = pHead->index[1];
           pHead->index[1] = EFS_POINTER_NULL;
-//          efs_port_write( indexTmp, (const uint8_t *)_efs_block[n], EFS_BLOCK_SIZE);
           efs_save( indexTmp, n, 0, sizeof(size_t)*2);
         }else{ // this is the last
           pHead->index[1] = EFS_POINTER_NULL;
-//          efs_port_write( index, (const uint8_t *)_efs_block[n], EFS_BLOCK_SIZE);
           efs_save( index, n, 0, sizeof(size_t)*2 );
           break;
         }
@@ -272,7 +266,6 @@ uint8_t efs_get_maptab_head( size_t *index )
                 return EFS_OK;
             }
         }while( (maxIndex != (4 / sizeof(size_t)) ) && (minIndex != (EFS_BLOCK_SIZE / EFS_POINTER_SIZE - 1) ));
-//        }while( (curIndex != minIndex ) && (curIndex != maxIndex-1 ));
     }
 
     return EFS_MAPTAB_NOT_FOUND;
@@ -359,7 +352,6 @@ uint8_t efs_update_mapHead( size_t index )
                 return resp;
             }
         }while( (maxIndex != (4 / sizeof(size_t)) ) && (minIndex != (EFS_SECTOR_SIZE / EFS_POINTER_SIZE - 1) ));
-//        }while( (curIndex != minIndex ) && (curIndex != maxIndex-1 ));
     }
 
     return EFS_MAPTAB_NOT_FOUND;
@@ -407,7 +399,6 @@ uint8_t efs_rebuild_index()
             if( ((struct xMapTableHead *)_efs_block[0])->index[1] == EFS_POINTER_DEFAULT ){
                 // all old table item has been readed
                 // save the new created table block
-//                resp = efs_save_block( indexNew, 1 );
                 resp = efs_save( indexNew, 1, 0, seek * sizeof(struct xMapTableHead) );
                 // update the MapHead
                 resp = efs_update_mapHead( indexHead );
@@ -469,13 +460,20 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen)
     if( EFS_OK == resp ){
         resp = efs_get_mapblk( indexHead, key );
         if( EFS_OK == resp ){
-            resp = efs_read_block(_xMapTabItem.index);
-            if( EFS_OK == resp ){
-                len = _xMapTabItem.length > bufLen?bufLen:_xMapTabItem.length;
-                pBlk = (struct xMapBlock *)_efs_block[0];
-                memcpy( buf, pBlk->data, len );
-                if( NULL != dataLen )
-                  *dataLen = len;
+            bufLen = _xMapTabItem.length > bufLen ? bufLen : _xMapTabItem.length;
+            pBlk = (struct xMapBlock *)_efs_block[0];
+            indexHead = _xMapTabItem.index;
+            if( NULL != dataLen )
+              *dataLen = 0;
+            while( bufLen ){
+                resp = efs_read_block( indexHead );
+                if( EFS_OK == resp ){
+                    len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE;
+                    len = len > bufLen ? bufLen: len;
+                    memcpy( buf, pBlk->data, len );
+                    *dataLen += len;
+                    bufLen -= len;
+                }
             }
         }
     }
@@ -548,7 +546,6 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                 }
 
                 // fill the data area by EFS_POINTER_DEFAULT
-//                memset(_efs_block[i], EFS_POINTER_DEFAULT, EFS_BLOCK_SIZE/sizeof(size_t) );
                 memset(_efs_block[i], EFS_POINTER_DEFAULT, EFS_BLOCK_SIZE );
                 pBlk = (struct xMapBlock *)_efs_block[i];
                 pBlk->index[0] = EFS_POINTER_NULL;
@@ -558,7 +555,6 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                 memcpy( pBlk->data, buf, len );
                 bufLen -= len;
                 if( 0 == bufLen ){
-//                    resp = efs_save_block( indexTmp, i );
                     resp = efs_save( indexTmp, i, 0, sizeof(size_t)*2 + len ); // save the last data
                     break;
                 }
@@ -578,20 +574,16 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                     if( _szKeyBlkIdOld == indexPre ){ //they are in the same Block
                         indexTmp = ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index;
                         ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index = EFS_POINTER_NULL;
-//                        resp = efs_save_block( indexPre, 0 );
-                        // the i must be after the indexTmp
-//                        resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*_szKeyBlkIndexOld, sizeof(struct xMapTableItem)*(i-_szKeyBlkIndexOld+1) );
+                        // the i must be after the indexTmpct xMapTableItem)*(i-_szKeyBlkIndexOld+1) );
                         resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*_szKeyBlkIndexOld, EFS_POINTER_SIZE );
                         resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*i, sizeof(struct xMapTableItem) );
                     }else{
-//                        resp = efs_save_block( indexPre, 0 );
                         resp = efs_save( indexPre, 0, 0, sizeof(struct xMapTableItem)*2 ); // save the MapTabHead and the first MapTabItem
                         if( EFS_OK == resp ){
                             resp = efs_read_block(_szKeyBlkIdOld);
                             if( EFS_OK == resp ){
                                 indexTmp = ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index;
                                 ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index = EFS_POINTER_NULL;
-//                                resp = efs_save_block( _szKeyBlkIdOld, 0 );
                                 resp = efs_save( _szKeyBlkIdOld, 0, sizeof(struct xMapTableItem)*_szKeyBlkIndexOld, sizeof(struct xMapTableItem) );
                             }
                         }
@@ -601,7 +593,6 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                       resp = efs_clear_index_chain( indexTmp, 0 );
                     }
                 }else{
-//                  resp = efs_save_block( indexPre, 0 );
                   resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*i, sizeof(struct xMapTableItem) );
                 }
                 
