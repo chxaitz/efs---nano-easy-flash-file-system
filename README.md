@@ -44,7 +44,7 @@ uint8_t efs_gc(); // 对存储空间进行回收，测试用，用户无需调�
 #### 快速开始
 
 1.  移植的接口函数   
-    这里使用内存作为存储区域，测试对 **EFS** 的使用
+    这里使用**RAM**作为存储区域，测试对 **EFS** 的使用
 ``` C
 uint8_t _ram_data[128*6];
 uint8_t efs_port_read(size_t addr, uint8_t *buf, size_t size) 
