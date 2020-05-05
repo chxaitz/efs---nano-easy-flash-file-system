@@ -32,7 +32,6 @@ size_t _szKeyTabOffCur = 0;
 size_t _szInvalidMapTabItem = 0;
 struct xMapTableItem _xMapTabItem;
 
-extern size_t _count;
 /*********************************************************************
  * FUNCTIONS
  *********************************************************************/
