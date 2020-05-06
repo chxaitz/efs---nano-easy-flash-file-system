@@ -90,12 +90,12 @@ int main(void)
   efs_init();
   while(1){
     time_start();
-    while( i++ < 10 ){
+    for( i=0; i<10; i++ ){
       // set key-value
       resp = efs_set("hell", (uint8_t*)&eep_data, sizeof(xEepData));
       if( EFS_OK != resp ){
-        printf("main","efs set failed! ErrorCode: %d",resp);
-        delay_ms(5);
+        printf("efs set failed! ErrorCode: %d",resp);
+        delay_ms(500);
       }
       // get value len by key
       len= efs_get_len("hell");
@@ -103,16 +103,15 @@ int main(void)
       resp = efs_get("hell", data, sizeof(xEepData), NULL);
       if( EFS_OK != resp ){
         printf("efs get failed! ErrorCode: %d",resp);
-        delay_ms(5);
+        delay_ms(500);
       }else{
-        if( 0 != memcmp( (const void*)&eep_data, (const void*)data, sizeof(xEepData)) ){
+        if( 0 != memcmp( (const void*)&eep_data, (const void*)data, sizeof(struct xEepData)) ){
           printf("efs get data is not equal to the set!");
-          delay_ms(5);
+          delay_ms(500);
         }
       }
       tick++;
     }
-    i = 0;
     tmspn_cur = time_end();
     tmspn_avg = (tmspn_avg + tmspn_cur)/2;
     if(tmspn_min > tmspn_cur ) tmspn_min = tmspn_cur;
