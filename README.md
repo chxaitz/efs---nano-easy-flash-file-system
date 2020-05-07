@@ -19,11 +19,11 @@ EasyFlash在Stm32上使用的很好，就仿照移植了个8位机版本的，�
 ```
 3.  `efs.h` 头文件用户在使用前，需要根据自身实际情况进行修改；
 ``` C
-#define EFS_KEY_LENGHT_MAX  4          // key的最大长度，可为（4，12），这里推荐固定为4Bytes，则32Bytes的BLOCK中最多能存储3个MapTableItem条目，为12Bytes时，则需要对应调整BLOCK为64Bytes，
+#define EFS_KEY_LENGHT_MAX  4          // key的最大长度，可为（4，12），这里推荐固定为4B(Bytes)，则32B的BLOCK中最多能存储3个MapTableItem条目，为12B时，则需要对应调整BLOCK为64B
 
 #define EFS_POINTER_DEFAULT 0x0000     // 存储空间擦除之后的默认值，比如我这里，擦除后默认为0x0000
 #define EFS_POINTER_NULL    0xffff     // 存储空间已使用的标记，需要与上面的 EFS_POINTER_DEFAULT 不同
-#define EFS_START_ADDR      0x0000     // 存储空间的起始地址，如果用户自己管理的话，可以设置为0x0000
+#define EFS_START_ADDR      0x0000     // 存储空间的起始地址，如果用户自己管理的话，可以设置为0x0000，否则必须为1个扇区的起始位
 #define EFS_AREA_SIZE       0x0300     // 存储空间的大小，代表了能够管理的最大空间大小
 #define EFS_BLOCK_SIZE      0x20       // 系统的最小管理单元(块)大小，根据实际尺寸，以(8K,32K)为界，推荐设置为(32,64,128)3个参数
 #define EFS_SECTOR_SIZE     0x80       // 扇区的大小，硬件能够擦除的最小区域
@@ -39,7 +39,6 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen); //
                                                                               // bufLen为缓冲区的最大长度，   
                                                                               // *dataLen用来返回实际数据长度，可为NULL
 uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen ); // 设置数据
-uint8_t efs_gc(); // 对存储空间进行回收，测试用，用户无需调用此函数
 ```
 #### 快速开始
 
