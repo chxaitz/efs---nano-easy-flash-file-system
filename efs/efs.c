@@ -1,5 +1,6 @@
 #include "efs.h"
 #include "string.h"
+
 /*********************************************************************
  * CONSTANTS
  */
@@ -10,8 +11,7 @@
 struct xMapTableItem{
     size_t index;
     size_t length;
-//    size_t size;
-    uint8_t key[EFS_KEY_LENGHT_MAX];
+    uint8_t key[EFS_KEY_LENGTH_MAX];
 };
 struct xMapTableHead{
     size_t index[sizeof(struct xMapTableItem)/sizeof(size_t)];
@@ -27,15 +27,16 @@ struct xMapBlock{
  */
 const uint8_t _efs_ver[]="efs0";
 uint8_t _efs_block[2][EFS_BLOCK_SIZE];
-size_t _szKeyBlkIdCur = 0;
-size_t _szKeyTabOffCur = 0;
+size_t  _szApplyBlkIdCur = 0;
+size_t  _szKeyBlkIdCur  = 0;
+uint8_t _u8KeyTabOffCur = 0;
 size_t _szInvalidMapTabItem = 0;
 struct xMapTableItem _xMapTabItem;
 
 /*********************************************************************
  * FUNCTIONS
  *********************************************************************/
-uint8_t efs_gc();
+uint8_t efs_gc( uint8_t n );
 
 uint8_t efs_read( size_t index, uint8_t i, uint8_t off, uint8_t len )
 {
@@ -87,39 +88,52 @@ uint8_t efs_save_block( size_t index, uint8_t i )
     return resp;
 }
 
+// apply a new MapBlock, if failed return NULL(0)
 size_t efs_apply_empty_block( uint8_t n )
 {
     uint8_t finded = FALSE;
-    uint8_t retry = FALSE;
-    size_t index = 0;
+    uint8_t retred = FALSE;
+    
+    size_t index = _szApplyBlkIdCur;
     struct xMapTableHead *pHead = (struct xMapTableHead *)_efs_block[n];
     while(1){
-        for(size_t i=EFS_BLOCKS_IN_SECTOR; i<EFS_BLOCK_INDEX_MAX; i++ ){
-            efs_read( i, n, 0, EFS_POINTER_SIZE);
+        do{
+            index = (index + 1) % EFS_BLOCK_INDEX_MAX;
+            if( index < EFS_BLOCKS_IN_SECTOR )
+              index = EFS_BLOCKS_IN_SECTOR;
+            efs_read( index, n, 0, EFS_POINTER_SIZE);
             if( pHead->index[0] == EFS_POINTER_DEFAULT ){
                 memset(_efs_block[n], EFS_POINTER_DEFAULT, EFS_BLOCK_SIZE );
                 pHead->index[0] = EFS_POINTER_NULL;
-                index = i;
+                efs_save( index, n, 0, EFS_POINTER_SIZE);
+                _szApplyBlkIdCur = index;
                 finded = TRUE;
                 break;
             }
-        }
+        }while( index != _szApplyBlkIdCur );
 
-        // retry and exist
-        if( finded == FALSE ){ // if failed, try to gc and reget
-            if( retry == FALSE ){
-                efs_gc();
-                retry = TRUE;
+        if( finded == FALSE ){
+            // retry and exist
+            if( retred == FALSE ){ // if failed, try to gc and reget
+                efs_gc( n ); // when call this the _szApplyBlkIdCur will set EFS_BLOCK_INDEX_MAX
+                retred = TRUE;
             }else{
-                break;
+              break;
             }
         }else{
-            break;
+          break;
         }
     }
-    return index;
+    
+    if( finded == TRUE ){
+      return _szApplyBlkIdCur;
+    }
+    else{
+      return NULL;
+    }
 }
 
+// apply a new MapTableItem
 uint8_t efs_apply_empty_item( size_t indexHead, size_t *index, uint8_t *off )
 {
     uint8_t resp = EFS_OK;
@@ -249,7 +263,6 @@ uint8_t efs_get_maptab_head( size_t *index )
     // read the MapHead
     resp = efs_read_block(0);
     if( EFS_OK == resp ){
-//        minIndex = 1;
         minIndex = 4 / sizeof(size_t);
         maxIndex = EFS_BLOCK_SIZE / EFS_POINTER_SIZE;
         curIndex = ( minIndex + maxIndex ) / 2;
@@ -272,10 +285,8 @@ uint8_t efs_get_maptab_head( size_t *index )
 
 /**
  * get data addr by key.
- * @note This operation's units is word.
- * @note This operation must after erase. @see flash_erase.
  *
- * @param addr MapTable head address
+ * @param tableHeadIndex MapTable head address index
  * @param key  the key word to search
  *
  * @return result
@@ -294,9 +305,9 @@ uint8_t efs_get_mapblk( size_t tableHeadIndex, uint8_t *key )
       if( EFS_OK == resp ){
         for( index=1; index < (EFS_BLOCK_SIZE/sizeof( struct xMapTableItem)); index++ ){
           if( (pItem + index)->index != EFS_POINTER_NULL ){
-            if( 0 == strncmp((const char*)key, (const char*)pItem[index].key, EFS_KEY_LENGHT_MAX) ){
+            if( 0 == strncmp((const char*)key, (const char*)pItem[index].key, EFS_KEY_LENGTH_MAX) ){
                 memcpy( &_xMapTabItem, pItem+index, sizeof(struct xMapTableItem) ); // copy the MapTableItem data
-                _szKeyTabOffCur = index;
+                _u8KeyTabOffCur = index;
                 finded = TRUE;
                 return EFS_OK;
             }
@@ -352,7 +363,7 @@ uint8_t efs_update_mapHead( size_t index )
             }
         }while( (maxIndex != (4 / sizeof(size_t)) ) && (minIndex != (EFS_SECTOR_SIZE / EFS_POINTER_SIZE - 1) ));
     }
-
+    
     return EFS_MAPTAB_NOT_FOUND;
 }
 
@@ -411,11 +422,11 @@ uint8_t efs_rebuild_index()
             }
         }
     }
-
+    
     return resp;
 }
 
-uint8_t efs_gc()
+uint8_t efs_gc( uint8_t n )
 {
     uint8_t resp = EFS_OK;
     uint8_t j;
@@ -423,8 +434,8 @@ uint8_t efs_gc()
     for(size_t i=1; i<EFS_SECTOR_INDEX_MAX; i++ ){
       addr = EFS_START_ADDR + EFS_SECTOR_SIZE * i;
       for( j=0; j< EFS_BLOCKS_IN_SECTOR; j++ ){
-        resp = efs_port_read( addr, _efs_block[0], sizeof(struct xMapBlock));
-        if( ((struct xMapBlock*)_efs_block[0])->index[1] != EFS_POINTER_NULL){
+        resp = efs_port_read( addr, _efs_block[n], sizeof(struct xMapBlock));
+        if( ((struct xMapBlock*)_efs_block[n])->index[1] != EFS_POINTER_NULL){
           break;
         }
         addr += EFS_BLOCK_SIZE;
@@ -433,8 +444,8 @@ uint8_t efs_gc()
         resp = efs_erase_sector( i );
     }
     
-    // it's called after gc(),because must be sure have the empty blks to rebuild the index map
-//    efs_rebuild_index();
+    // set _szApplyBlkIdCur = EFS_BLOCK_INDEX_MAX to make the next blk search start from EFS_BLOCKS_IN_SECTOR ^_^
+    _szApplyBlkIdCur = EFS_BLOCK_INDEX_MAX;
 
     return resp;
 }
@@ -467,12 +478,13 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen)
             while( bufLen ){
                 resp = efs_read_block( indexHead );
                 if( EFS_OK == resp ){
-                    len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE;
+                    len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE*2;
                     len = len > bufLen ? bufLen: len;
                     memcpy( buf, pBlk->data, len );
                     if( NULL != dataLen )
-                        *dataLen += len;
+                      *dataLen += len;
                     bufLen -= len;
+                    buf += len;
                 }
             }
         }
@@ -504,7 +516,7 @@ size_t efs_get_len( uint8_t *key )
       return 0;
 }
 
-size_t _szKeyBlkIdOld = 0;
+size_t  _szKeyBlkIdOld = 0;
 uint8_t _szKeyBlkIndexOld = 0;
 uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
 {
@@ -514,7 +526,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
     size_t indexHead,indexPre,indexTmp;
     size_t len;
     struct xMapBlock *pBlk;
-    strncpy((char*)_xMapTabItem.key, (const char *)key, EFS_KEY_LENGHT_MAX);
+    strncpy((char*)_xMapTabItem.key, (const char *)key, EFS_KEY_LENGTH_MAX);
     _xMapTabItem.length = bufLen;
 
     resp = efs_get_maptab_head( &indexHead );
@@ -522,9 +534,11 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
         // find if the key is existed
         resp = efs_get_mapblk( indexHead, key );
         if( EFS_OK == resp ){
+            // reset the length, because it's covered
+            _xMapTabItem.length = bufLen;
             // pre save the old key's BlkId and Index
             _szKeyBlkIdOld = _szKeyBlkIdCur;
-            _szKeyBlkIndexOld = _szKeyTabOffCur;
+            _szKeyBlkIndexOld = _u8KeyTabOffCur;
         }else{
           _szKeyBlkIdOld = 0;
           _szKeyBlkIndexOld = 0;
@@ -551,7 +565,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                 pBlk->index[0] = EFS_POINTER_NULL;
                 pBlk->index[1] = EFS_POINTER_DEFAULT;
 
-                len = bufLen > (EFS_BLOCK_SIZE-EFS_POINTER_SIZE) ? (EFS_BLOCK_SIZE-EFS_POINTER_SIZE) : bufLen;
+                len = bufLen > (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) ? (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) : bufLen;
                 memcpy( pBlk->data, buf, len );
                 bufLen -= len;
                 if( 0 == bufLen ){
@@ -574,7 +588,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                     if( _szKeyBlkIdOld == indexPre ){ //they are in the same Block
                         indexTmp = ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index;
                         ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index = EFS_POINTER_NULL;
-                        // the i must be after the indexTmpct xMapTableItem)*(i-_szKeyBlkIndexOld+1) );
+                        // the i must be after the indexTmp
                         resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*_szKeyBlkIndexOld, EFS_POINTER_SIZE );
                         resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*i, sizeof(struct xMapTableItem) );
                     }else{
