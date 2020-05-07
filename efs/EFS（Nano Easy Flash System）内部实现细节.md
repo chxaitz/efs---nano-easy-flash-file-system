@@ -109,6 +109,19 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen ); // 设置数据
 #define EFS_INVALID_KEY_MAX 8          // 最大无效key计数，当索引中无效key大于此值时将重建索引表，过小的值会导致频繁重建
 ```
 
+#### 全局变量及相关说明
+``` C
+const uint8_t _efs_ver[]="efs0";        //文件系统标识头，用来标识EFS文件系统及版本呢
+uint8_t _efs_block[2][EFS_BLOCK_SIZE];  //系统采用双cache缓存写入的方式，需要2组大小相同的缓冲空间
+size_t  _szApplyBlkIdCur = 0;           //当前申请的Block的Index
+size_t  _szKeyBlkIdCur  = 0;            //当前key所在Block的Index
+uint8_t _u8KeyTabOffCur = 0;            //当前key在MapTable表中的偏移
+size_t _szInvalidMapTabItem = 0;        //当前无效key的计数，到达阈值时，则会触发rebuild_maptable_index
+struct xMapTableItem _xMapTabItem;      //存储当前访问的MapTableItem的结构体实例
+size_t  _szKeyBlkIdOld = 0;             //尚未删除的旧key所在的MapTable的Index
+uint8_t _szKeyBlkIndexOld = 0;          //尚未删除的旧key的MapTableItem的偏移
+```
+
 #### efs_init()函数   
 该函数为**EFS**的初始化函数，该函数先读取第0个块，并识别前面的4字节识别符。识别符通过后，再判断后面的索引是否有效，有效地索引应该有且只有1个。不满足条件就重新进行格式化。   
 ``` C
@@ -160,11 +173,13 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen)
             while( bufLen ){
                 resp = efs_read_block( indexHead );
                 if( EFS_OK == resp ){
-                    len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE;
+                    len = EFS_BLOCK_SIZE - EFS_POINTER_SIZE*2;
                     len = len > bufLen ? bufLen: len;
                     memcpy( buf, pBlk->data, len );
-                    *dataLen += len;
+                    if( NULL != dataLen )
+                      *dataLen += len;
                     bufLen -= len;
+                    buf += len;
                 }
             }
         }
@@ -190,18 +205,19 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
     size_t indexHead,indexPre,indexTmp;
     size_t len;
     struct xMapBlock *pBlk;
-    strncpy((char*)_xMapTabItem.key, (const char *)key, EFS_KEY_LENGHT_MAX);
+    strncpy((char*)_xMapTabItem.key, (const char *)key, EFS_KEY_LENGTH_MAX);
     _xMapTabItem.length = bufLen;
 
-    //通过查询MapHead获取第一个MapTable的索引
     resp = efs_get_maptab_head( &indexHead );
     if( EFS_OK == resp ){
         // find if the key is existed
         resp = efs_get_mapblk( indexHead, key );
         if( EFS_OK == resp ){
+            // reset the length, because it's covered
+            _xMapTabItem.length = bufLen;
             // pre save the old key's BlkId and Index
             _szKeyBlkIdOld = _szKeyBlkIdCur;
-            _szKeyBlkIndexOld = _szKeyTabOffCur;
+            _szKeyBlkIndexOld = _u8KeyTabOffCur;
         }else{
           _szKeyBlkIdOld = 0;
           _szKeyBlkIndexOld = 0;
@@ -211,7 +227,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
         while(bufLen){
             i = (i+1)%2;
             indexPre = indexTmp;
-            indexTmp = efs_apply_empty_block(i); // 尝试申请1个空Block
+            indexTmp = efs_apply_empty_block(i);
             if( NULL != indexTmp ){
                 if( TRUE == first ){
                     _xMapTabItem.index = indexTmp;
@@ -228,11 +244,11 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                 pBlk->index[0] = EFS_POINTER_NULL;
                 pBlk->index[1] = EFS_POINTER_DEFAULT;
 
-                len = bufLen > (EFS_BLOCK_SIZE-EFS_POINTER_SIZE) ? (EFS_BLOCK_SIZE-EFS_POINTER_SIZE) : bufLen;
+                len = bufLen > (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) ? (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) : bufLen;
                 memcpy( pBlk->data, buf, len );
                 bufLen -= len;
-                if( 0 == bufLen ){// save the last data
-                    resp = efs_save( indexTmp, i, 0, sizeof(size_t)*2 + len ); 
+                if( 0 == bufLen ){
+                    resp = efs_save( indexTmp, i, 0, sizeof(size_t)*2 + len ); // save the last data
                     break;
                 }
 
@@ -243,7 +259,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
         }
 
         // find an empty item space, and save the MapTableItem
-        if( EFS_OK == resp ){ // 申请1个空的MapTableItem条目
+        if( EFS_OK == resp ){
             resp = efs_apply_empty_item( indexHead, &indexPre, &i );
             if( EFS_OK == resp ){
                 memcpy( (struct xMapTableItem *)_efs_block[0] + i, &_xMapTabItem, sizeof(struct xMapTableItem) );
@@ -256,7 +272,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                         resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*i, sizeof(struct xMapTableItem) );
                     }else{
                         resp = efs_save( indexPre, 0, 0, sizeof(struct xMapTableItem)*2 ); // save the MapTabHead and the first MapTabItem
-                        if( EFS_OK == resp ){ // read the old block update & save
+                        if( EFS_OK == resp ){
                             resp = efs_read_block(_szKeyBlkIdOld);
                             if( EFS_OK == resp ){
                                 indexTmp = ((struct xMapTableItem *)_efs_block[0] + _szKeyBlkIndexOld)->index;
@@ -273,7 +289,6 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                   resp = efs_save( indexPre, 0, sizeof(struct xMapTableItem)*i, sizeof(struct xMapTableItem) );
                 }
                 
-                // rebuild the MapTable
                 if( _szInvalidMapTabItem >= EFS_INVALID_KEY_MAX )
                   efs_rebuild_index();
             }
