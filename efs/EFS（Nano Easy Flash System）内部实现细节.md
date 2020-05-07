@@ -1,4 +1,4 @@
-# EFS（Nano Easy Flash System）内部实现细节
+# EFS（Nano Easy Flash File System）内部实现细节
 
 标签 ： 源码 分析 c efs
 
@@ -92,14 +92,13 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen); //
                                                                               // bufLen为缓冲区的最大长度，   
                                                                               // *dataLen用来返回实际数据长度，可为NULL
 uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen ); // 设置数据
-uint8_t efs_gc(); // 对存储空间进行回收，测试用，用户无需调用此函数
 ```
 
 ### 四、系统仿真及相关源码分析
 #### 1. 仿真前的相关参数介绍
 如下表为本次仿真的相关参数设置，Area为768B，Sector为128B，Block为32B，BlockTableItem为8B。
 ``` C
-#define EFS_KEY_LENGHT_MAX  4          // key的最大长度，可为（4，12），这里推荐固定为4Bytes，则32Bytes的BLOCK中最多能存储3个MapTableItem条目，为12Bytes时，则需要对应调整BLOCK为64Bytes，
+#define EFS_KEY_LENGHT_MAX  4          // key的最大长度，可为（4，12），这里推荐固定为4B，则32B的BLOCK中最多能存储3个MapTableItem条目，为12B时，则需要对应调整BLOCK为64B，
 
 #define EFS_POINTER_DEFAULT 0xffff     // 存储空间擦除之后的默认值，比如我这里，擦除后默认为0xffff
 #define EFS_POINTER_NULL    0x0000     // 存储空间已使用的标记，需要与上面的 EFS_POINTER_DEFAULT 不同
