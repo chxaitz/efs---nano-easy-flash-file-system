@@ -94,6 +94,8 @@ size_t efs_apply_empty_block( uint8_t n )
     uint8_t finded = FALSE;
     uint8_t retred = FALSE;
     
+    if( _szApplyBlkIdCur < EFS_BLOCKS_IN_SECTOR )
+      _szApplyBlkIdCur = EFS_BLOCKS_IN_SECTOR;
     size_t index = _szApplyBlkIdCur;
     struct xMapTableHead *pHead = (struct xMapTableHead *)_efs_block[n];
     while(1){
@@ -171,6 +173,9 @@ uint8_t efs_apply_empty_item( size_t indexHead, size_t *index, uint8_t *off )
                     }else{
                         break;
                     }
+                }else{
+                  resp = EFS_SPACE_FULL;
+                  break;
                 }
             }
         }else{
@@ -444,9 +449,6 @@ uint8_t efs_gc( uint8_t n )
         resp = efs_erase_sector( i );
     }
     
-    // set _szApplyBlkIdCur = EFS_BLOCK_INDEX_MAX to make the next blk search start from EFS_BLOCKS_IN_SECTOR ^_^
-    _szApplyBlkIdCur = EFS_BLOCK_INDEX_MAX;
-
     return resp;
 }
 
@@ -485,6 +487,7 @@ uint8_t efs_get( uint8_t *key, uint8_t *buf, size_t bufLen, size_t *dataLen)
                       *dataLen += len;
                     bufLen -= len;
                     buf += len;
+                    indexHead = pBlk->index[1];
                 }
             }
         }
@@ -568,6 +571,7 @@ uint8_t efs_set( uint8_t *key, uint8_t *buf, size_t bufLen )
                 len = bufLen > (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) ? (EFS_BLOCK_SIZE-EFS_POINTER_SIZE*2) : bufLen;
                 memcpy( pBlk->data, buf, len );
                 bufLen -= len;
+                buf += len;
                 if( 0 == bufLen ){
                     resp = efs_save( indexTmp, i, 0, sizeof(size_t)*2 + len ); // save the last data
                     break;
